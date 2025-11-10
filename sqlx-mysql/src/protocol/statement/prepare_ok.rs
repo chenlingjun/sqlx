@@ -19,7 +19,7 @@ impl ProtocolDecode<'_, Capabilities> for PrepareOk {
     fn decode_with(buf: Bytes, _: Capabilities) -> Result<Self, Error> {
         // 检测阿里云特殊格式 (7字节)
         if buf.len() == 7 {
-            return Self::parse_aliyun_format(buf);
+            return Self::parse_aliyun_format(&buf);
         }
         
         const SIZE: usize = 12;
