@@ -51,7 +51,9 @@ impl ProtocolDecode<'_, Capabilities> for PrepareOk {
             warnings,
         })
     }
+}
 
+impl PrepareOk {
     /// 解析阿里云特殊的 7 字节格式
     fn parse_aliyun_format(buf: &[u8]) -> Result<Self, Error> {
         // 阿里云格式: [00, 00, 00, 02, 00, 00, 00]
