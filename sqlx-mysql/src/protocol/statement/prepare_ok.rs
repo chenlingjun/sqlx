@@ -97,17 +97,14 @@ fn hex_dump(buf: &[u8]) -> String {
 fn escape_string(buf: &[u8]) -> String {
     buf.iter()
         .map(|&b| {
-            if b.is_ascii_graphic() || b == b' ' {
-                b as char
-            } else {
-                // 对于非打印字符，显示转义序列
-                match b {
-                    0x00 => "\\0".to_string(),
-                    0x09 => "\\t".to_string(),
-                    0x0A => "\\n".to_string(),
-                    0x0D => "\\r".to_string(),
-                    _ => format!("\\x{:02x}", b),
-                }
+            // 对于非打印字符，显示转义序列
+            match b {
+                b if b.is_ascii_graphic() || b == b' ' => char::from(b).to_string(),
+                0x00 => "\\0".to_string(),
+                0x09 => "\\t".to_string(),
+                0x0A => "\\n".to_string(),
+                0x0D => "\\r".to_string(),
+                _ => format!("\\x{:02x}", b),
             }
         })
         .collect::<String>()
