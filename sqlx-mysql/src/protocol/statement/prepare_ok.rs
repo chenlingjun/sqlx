@@ -63,10 +63,43 @@ impl ProtocolDecode<'_, Capabilities> for PrepareOk {
             println!("  Bytes 4-6 (uncompressed len): {:02x} {:02x} {:02x}", 
                 buf[4], buf[5], buf[6]);
             
-            let compressed_len = u32::from(buf[0]) | u32::from(buf[1]) << 8 | u32::from(buf[2]) << 16;
-            let uncompressed_len = u32::from(buf[4]) | u32::from(buf[5]) << 8 | u32::from(buf[6]) << 16;
-            println!("  Compressed length: {}, Uncompressed length: {}", 
-                compressed_len, uncompressed_len);
+            // let compressed_len = u32::from(buf[0]) | u32::from(buf[1]) << 8 | u32::from(buf[2]) << 16;
+            // let uncompressed_len = u32::from(buf[4]) | u32::from(buf[5]) << 8 | u32::from(buf[6]) << 16;
+            // println!("  Compressed length: {}, Uncompressed length: {}", 
+            //     compressed_len, uncompressed_len);
+             println!("Detected Aliyun special 7-byte format");
+            println!("Data: {:02x} {:02x} {:02x} {:02x} {:02x} {:02x} {:02x}", 
+                buf[0], buf[1], buf[2], buf[3], buf[4], buf[5], buf[6]);
+            
+            // 直接解析这7字节作为PrepareOk响应
+            // 格式分析: 00 00 00 02 00 00 00
+            // 这看起来像是: [status:1] [statement_id:4] [columns:1] [params:1]
+            
+            let mut slice = buf;
+            
+            let status = slice.get_u8();
+            if status != 0x00 {
+                return Err(err_protocol!(
+                    "expected 0x00 (COM_STMT_PREPARE_OK) but found 0x{:02x}",
+                    status
+                ));
+            }
+            
+            let statement_id = slice.get_u32_le();
+            
+            // 剩余2字节：可能是简化的columns和params
+            let columns = slice.get_u8() as u16;
+            let params = slice.get_u8() as u16;
+            
+            println!("Parsed Aliyun format: status=0x{:02x}, statement_id={}, columns={}, params={}", 
+                status, statement_id, columns, params);
+            
+            return Ok(Self {
+                statement_id,
+                columns,
+                params,
+                warnings: 0,
+            });
         }
         
         if buf.len() >= 12 {
