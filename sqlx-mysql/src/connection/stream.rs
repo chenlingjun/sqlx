@@ -164,33 +164,34 @@ impl<S: Socket> MySqlStream<S> {
     // 在 recv_packet 方法中添加调试
     pub(crate) async fn recv_packet(&mut self) -> Result<Packet<Bytes>, Error> {
         println!("=== 🚀 [recv_packet] START ===");
-        
+    
         let payload = self.recv_packet_part().await?;
         println!("🔢 [recv_packet] Initial payload: {} bytes", payload.len());
         
-        let payload = if payload.len() < 0xFF_FF_FF {
-            println!("✅ [recv_packet] Single packet, no chunking needed");
-            payload
-        } else {
-            println!("🔄 [recv_packet] Large packet, starting chunked read");
-            let mut final_payload = BytesMut::with_capacity(0xFF_FF_FF * 2);
-            final_payload.extend_from_slice(&payload);
-    
-            drop(payload); // we don't need the allocation anymore
-    
-            let mut last_read = 0xFF_FF_FF;
-            let mut chunk_count = 1;
-            while last_read == 0xFF_FF_FF {
-                println!("📦 [recv_packet] Reading chunk {}", chunk_count);
-                let part = self.recv_packet_part().await?;
-                last_read = part.len();
-                final_payload.extend_from_slice(&part);
-                println!("📦 [recv_packet] Chunk {}: {} bytes", chunk_count, last_read);
-                chunk_count += 1;
+        // 如果是7字节且应该是PrepareOk，尝试读取更多数据
+        let final_payload = if payload.len() == 7 && self.waiting.front() == Some(&Waiting::Result) {
+            println!("⚠️  [recv_packet] SUSPICIOUS: Got 7 bytes but expected PrepareOk (12 bytes)");
+            println!("    This might be a fragmented packet. Checking for more data...");
+            
+            // 尝试立即读取下一个包，看看是否有剩余数据
+            match tokio::time::timeout(
+                std::time::Duration::from_millis(100),
+                self.recv_packet_part()
+            ).await {
+                Ok(Ok(additional_data)) => {
+                    println!("✅ [recv_packet] Found additional {} bytes", additional_data.len());
+                    let mut combined = BytesMut::with_capacity(payload.len() + additional_data.len());
+                    combined.extend_from_slice(&payload);
+                    combined.extend_from_slice(&additional_data);
+                    combined.freeze()
+                }
+                _ => {
+                    println!("❌ [recv_packet] No additional data available");
+                    payload
+                }
             }
-            println!("✅ [recv_packet] Chunked read complete, total: {} bytes", 
-                final_payload.len());
-            final_payload.into()
+        } else {
+            payload
         };
     
         // 检查错误包
