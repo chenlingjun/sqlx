@@ -128,16 +128,12 @@ impl<S: Socket> MySqlStream<S> {
 
     // 在 recv_packet_part 方法中添加调试
     async fn recv_packet_part(&mut self) -> Result<Bytes, Error> {
-        // https://dev.mysql.com/doc/dev/mysql-server/8.0.12/page_protocol_basic_packets.html
-        // https://mariadb.com/kb/en/library/0-packet/#standard-packet
-    
         println!("=== 📥 [recv_packet_part] START ===");
-        
+    
+        // 读取4字节头
         let mut header: Bytes = self.socket.read(4).await?;
         println!("🔢 [recv_packet_part] Header (4 bytes): {}", hex_dump(&header));
     
-        // cannot overflow
-        #[allow(clippy::cast_possible_truncation)]
         let packet_size = header.get_uint_le(3) as usize;
         let sequence_id = header.get_u8();
     
@@ -146,11 +142,18 @@ impl<S: Socket> MySqlStream<S> {
         println!("📦 [recv_packet_part] Expected payload size: {}, sequence_id: {}", 
             packet_size, sequence_id);
     
+        // 关键调试：检查socket缓冲区状态
+        println!("🔍 [recv_packet_part] Socket buffer status before reading payload");
+        
         let payload: Bytes = self.socket.read(packet_size).await?;
         println!("📦 [recv_packet_part] Actual payload ({} bytes): {}", 
             payload.len(), hex_dump(&payload));
     
-        // TODO: packet compression
+        // 如果读取的payload大小不等于期望大小，说明有问题
+        if payload.len() != packet_size {
+            println!("❌ [recv_packet_part] PAYLOAD SIZE MISMATCH! Expected: {}, Got: {}", 
+                packet_size, payload.len());
+        }
     
         println!("=== 📥 [recv_packet_part] END (total {} bytes) ===\n", 
             4 + payload.len());
