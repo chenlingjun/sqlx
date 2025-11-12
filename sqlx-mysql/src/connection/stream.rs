@@ -129,7 +129,7 @@ impl<S: Socket> MySqlStream<S> {
     // 在 recv_packet_part 方法中添加调试
     async fn recv_packet_part(&mut self) -> Result<Bytes, Error> {
         println!("=== 📥 [recv_packet_part] START ===");
-    
+        
         // 读取4字节头
         let mut header: Bytes = self.socket.read(4).await?;
         println!("🔢 [recv_packet_part] Header (4 bytes): {}", hex_dump(&header));
@@ -142,17 +142,25 @@ impl<S: Socket> MySqlStream<S> {
         println!("📦 [recv_packet_part] Expected payload size: {}, sequence_id: {}", 
             packet_size, sequence_id);
     
-        // 关键调试：检查socket缓冲区状态
-        println!("🔍 [recv_packet_part] Socket buffer status before reading payload");
+        // 关键调试：记录读取前的状态
+        println!("🔍 [recv_packet_part] About to read {} bytes of payload", packet_size);
         
         let payload: Bytes = self.socket.read(packet_size).await?;
         println!("📦 [recv_packet_part] Actual payload ({} bytes): {}", 
             payload.len(), hex_dump(&payload));
     
-        // 如果读取的payload大小不等于期望大小，说明有问题
+        // 详细检查大小不匹配的情况
         if payload.len() != packet_size {
-            println!("❌ [recv_packet_part] PAYLOAD SIZE MISMATCH! Expected: {}, Got: {}", 
-                packet_size, payload.len());
+            println!("❌ [recv_packet_part] CRITICAL: PAYLOAD SIZE MISMATCH!");
+            println!("   Expected: {} bytes, but got: {} bytes", packet_size, payload.len());
+            println!("   Header was: {}", hex_dump(&[header[0], header[1], header[2]]));
+            println!("   This indicates a network or socket reading issue!");
+            
+            // 如果是7字节但期望12字节，特别记录
+            if packet_size == 12 && payload.len() == 7 {
+                println!("🚨 SPECIFIC ALIYUN ISSUE: Expected 12-byte PrepareOk but got only 7 bytes!");
+                println!("   This explains why PrepareOk parsing fails!");
+            }
         }
     
         println!("=== 📥 [recv_packet_part] END (total {} bytes) ===\n", 
@@ -164,57 +172,50 @@ impl<S: Socket> MySqlStream<S> {
     // 在 recv_packet 方法中添加调试
     pub(crate) async fn recv_packet(&mut self) -> Result<Packet<Bytes>, Error> {
         println!("=== 🚀 [recv_packet] START ===");
-    
+        
         let payload = self.recv_packet_part().await?;
         println!("🔢 [recv_packet] Initial payload: {} bytes", payload.len());
         
-        // 如果是7字节且应该是PrepareOk，尝试读取更多数据
         let final_payload = if payload.len() == 7 && self.waiting.front() == Some(&Waiting::Result) {
             println!("⚠️  [recv_packet] SUSPICIOUS: Got 7 bytes but expected PrepareOk (12 bytes)");
             println!("    This might be a fragmented packet. Checking for more data...");
             
-            // 尝试立即读取下一个包，看看是否有剩余数据
-            match tokio::time::timeout(
-                std::time::Duration::from_millis(100),
-                self.recv_packet_part()
-            ).await {
-                Ok(Ok(additional_data)) => {
+            // 直接尝试读取更多数据
+            match self.recv_packet_part().await {
+                Ok(additional_data) => {
                     println!("✅ [recv_packet] Found additional {} bytes", additional_data.len());
                     let mut combined = BytesMut::with_capacity(payload.len() + additional_data.len());
                     combined.extend_from_slice(&payload);
                     combined.extend_from_slice(&additional_data);
                     combined.freeze()
                 }
-                _ => {
-                    println!("❌ [recv_packet] No additional data available");
+                Err(e) => {
+                    println!("❌ [recv_packet] Failed to read additional data: {}", e);
                     payload
                 }
             }
         } else {
             payload
         };
-    
-        // 检查错误包
-        if let Some(&first_byte) = payload.first() {
+        
+        // 检查错误包 - 使用 final_payload
+        if let Some(&first_byte) = final_payload.first() {
             if first_byte == 0xff {
                 println!("❌ [recv_packet] Error packet detected (0xff)");
                 self.waiting.pop_front();
-    
-                // instead of letting this packet be looked at everywhere, we check here
-                // and emit a proper Error
                 return Err(
-                    MySqlDatabaseError(ErrPacket::decode_with(payload, self.capabilities)?).into(),
+                    MySqlDatabaseError(ErrPacket::decode_with(final_payload, self.capabilities)?).into(),
                 );
             }
         } else {
             println!("⚠️ [recv_packet] Empty packet received");
             return Err(err_protocol!("Packet empty"));
         }
-    
-        println!("✅ [recv_packet] Success, returning {} bytes", payload.len());
+        
+        println!("✅ [recv_packet] Success, returning {} bytes", final_payload.len());
         println!("=== 🚀 [recv_packet] END ===\n");
         
-        Ok(Packet(payload))
+        Ok(Packet(final_payload))  // 使用 final_payload
     }
     
     // 在 recv 方法中添加调试
