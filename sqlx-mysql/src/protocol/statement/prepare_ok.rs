@@ -80,11 +80,21 @@ impl PrepareOk {
             ));
         }
         
-        let statement_id = buf.get_u32_le();
+        // 问题在这里！我们需要手动读取正确的字节范围
+        // 数据: 00 00 00 02 00 00 00
+        // 索引: 0  1  2  3  4  5  6
+        // 我们需要索引 2-5: 00 02 00 00
+        
+        // 手动读取字节 2-5
+        let statement_id_bytes = [buf[2], buf[3], buf[4], buf[5]];
+        let statement_id = u32::from_le_bytes(statement_id_bytes);
+        
+        println!("🔍 Statement ID bytes: {:02x} {:02x} {:02x} {:02x} = {}",
+        buf[2], buf[3], buf[4], buf[5], statement_id);
         
         // 跳过剩余的2个保留字节
         // 在连接池初始化阶段，columns 和 params 可能为0或不重要
-        buf.advance(2);
+        // buf.advance(2);
         
         println!("Parsed Aliyun simplified format: statement_id={} (columns=0, params=0)", statement_id);
         
