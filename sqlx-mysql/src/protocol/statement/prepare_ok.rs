@@ -17,6 +17,13 @@ pub(crate) struct PrepareOk {
 
 impl ProtocolDecode<'_, Capabilities> for PrepareOk {
     fn decode_with(buf: Bytes, _: Capabilities) -> Result<Self, Error> {
+        // 打印buf内容用于调试
+        println!("=== PrepareOk Packet Debug ===");
+        println!("Buffer length: {} bytes", buf.len());
+        println!("Hex dump: {}", hex_dump(&buf));
+        println!("As string (escaped): {}", escape_string(&buf));
+        println!("==============================");
+        
         // 检测阿里云特殊格式 (7字节)
         if buf.len() == 7 {
             return Self::parse_aliyun_format(&buf);
@@ -75,4 +82,33 @@ impl PrepareOk {
             warnings: 0,
         })
     }
+}
+
+
+/// 将字节缓冲区转换为十六进制字符串
+fn hex_dump(buf: &[u8]) -> String {
+    buf.iter()
+        .map(|b| format!("{:02x}", b))
+        .collect::<Vec<String>>()
+        .join(" ")
+}
+
+/// 将字节缓冲区转换为转义字符串（便于查看可打印字符）
+fn escape_string(buf: &[u8]) -> String {
+    buf.iter()
+        .map(|&b| {
+            if b.is_ascii_graphic() || b == b' ' {
+                b as char
+            } else {
+                // 对于非打印字符，显示转义序列
+                match b {
+                    0x00 => "\\0".to_string(),
+                    0x09 => "\\t".to_string(),
+                    0x0A => "\\n".to_string(),
+                    0x0D => "\\r".to_string(),
+                    _ => format!("\\x{:02x}", b),
+                }
+            }
+        })
+        .collect::<String>()
 }
