@@ -85,8 +85,8 @@ impl PrepareOk {
         // 索引: 0  1  2  3  4  5  6
         // 我们需要索引 2-5: 00 02 00 00
         
-        // 手动读取字节 2-5
-        let statement_id_bytes = [buf[2], buf[3], buf[4], buf[5]];
+        // 手动读取字节 1-4
+        let statement_id_bytes = [buf[1], buf[2], buf[3], buf[4]];
         let statement_id = u32::from_le_bytes(statement_id_bytes);
         
         println!("🔍 Statement ID bytes: {:02x} {:02x} {:02x} {:02x} = {}",
