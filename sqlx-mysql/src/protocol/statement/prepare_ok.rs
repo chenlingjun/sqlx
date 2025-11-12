@@ -46,11 +46,42 @@ impl CompressedHeader {
 
 impl ProtocolDecode<'_, Capabilities> for PrepareOk {
     fn decode_with(mut buf: Bytes, _: Capabilities) -> Result<Self, Error> {
-        // 打印buf内容用于调试
-        println!("=== PrepareOk Packet Debug ===");
-        println!("Buffer length: {} bytes", buf.len());
-        println!("Hex dump: {}", hex_dump(&buf));
-        println!("As string (escaped): {}", escape_string(&buf));
+        println!("=== PrepareOk Packet Detailed Debug ===");
+        println!("Total buffer length: {} bytes", buf.len());
+        println!("Full hex dump: {}", hex_dump(&buf));
+        
+        // 检查前16个字节的详细结构
+        let preview_len = std::cmp::min(16, buf.len());
+        println!("First {} bytes: {}", preview_len, hex_dump(&buf[..preview_len]));
+        
+        // 分别分析可能的7字节和12字节头
+        if buf.len() == 7 {
+            println!("As 7-byte header:");
+            println!("  Bytes 0-2 (compressed len): {:02x} {:02x} {:02x}", 
+                buf[0], buf[1], buf[2]);
+            println!("  Byte 3 (sequence): {:02x}", buf[3]);
+            println!("  Bytes 4-6 (uncompressed len): {:02x} {:02x} {:02x}", 
+                buf[4], buf[5], buf[6]);
+            
+            let compressed_len = u32::from(buf[0]) | u32::from(buf[1]) << 8 | u32::from(buf[2]) << 16;
+            let uncompressed_len = u32::from(buf[4]) | u32::from(buf[5]) << 8 | u32::from(buf[6]) << 16;
+            println!("  Compressed length: {}, Uncompressed length: {}", 
+                compressed_len, uncompressed_len);
+        }
+        
+        if buf.len() >= 12 {
+            println!("As 12-byte header:");
+            println!("  Bytes 0-2 (payload len): {:02x} {:02x} {:02x}", 
+                buf[0], buf[1], buf[2]);
+            println!("  Byte 3 (sequence): {:02x}", buf[3]);
+            println!("  Bytes 4-6 (reserved): {:02x} {:02x} {:02x}", 
+                buf[4], buf[5], buf[6]);
+            println!("  Byte 7 (status): {:02x}", buf[7]);
+            
+            let payload_len = u32::from(buf[0]) | u32::from(buf[1]) << 8 | u32::from(buf[2]) << 16;
+            println!("  Payload length: {}", payload_len);
+        }
+        
         println!("==============================");
         
         // 检查是否是压缩协议 (7字节头)
