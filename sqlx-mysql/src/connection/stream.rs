@@ -129,18 +129,6 @@ impl<S: Socket> MySqlStream<S> {
     // 在 recv_packet_part 方法中添加调试
     async fn recv_packet_part(&mut self) -> Result<Bytes, Error> {
         println!("=== 📥 [recv_packet_part] START ===");
-    
-        // 🔥 关键修复：检查并清空可能残留的缓冲区数据
-        // 特别是在阿里云环境中，可能会有连接池的残留数据
-        let buffered_data_len = self.socket.buffer().len();
-        if buffered_data_len > 0 {
-            println!("⚠️ [recv_packet_part] WARNING: Buffer has {} bytes of leftover data!", buffered_data_len);
-            println!("   This is likely due to Aliyun RDS connection pool behavior");
-            println!("   Clearing buffer to avoid protocol desync...");
-            
-            // 清空缓冲区，确保我们从干净状态开始
-            self.socket.consume(buffered_data_len);
-        }
         
         // 读取4字节头
         let mut header: Bytes = self.socket.read(4).await?;
@@ -184,26 +172,6 @@ impl<S: Socket> MySqlStream<S> {
     // 在 recv_packet 方法中添加调试
     pub(crate) async fn recv_packet(&mut self) -> Result<Packet<Bytes>, Error> {
         println!("=== 🚀 [recv_packet] START ===");
-
-        // 检查缓冲区中是否已经有数据（阿里云特殊情况）
-        let pre_buffered_len = self.socket.buffer().len();
-        if pre_buffered_len > 0 {
-            println!("🔍 [recv_packet] Pre-buffered data detected: {} bytes", pre_buffered_len);
-            println!("   Hex: {}", hex_dump(&self.socket.buffer()[..std::cmp::min(pre_buffered_len, 32)]));
-            
-            // 如果是7字节的包，可能是阿里云的连接池包
-            if pre_buffered_len >= 11 { // 4字节头 + 7字节负载
-                let header_bytes = &self.socket.buffer()[0..4];
-                let payload_size = u32::from_le_bytes([header_bytes[0], header_bytes[1], header_bytes[2], 0]) as usize;
-                
-                if payload_size == 7 && pre_buffered_len >= 11 {
-                    println!("🚨 [recv_packet] Detected Aliyun 7-byte packet in buffer, skipping");
-                    self.socket.consume(11); // 跳过整个包
-                    // 然后重新开始读取
-                    return self.recv_packet().await;
-                }
-            }
-        }
         
         let payload = self.recv_packet_part().await?;
         println!("🔢 [recv_packet] Initial payload: {} bytes", payload.len());
@@ -234,9 +202,17 @@ impl<S: Socket> MySqlStream<S> {
         T: ProtocolDecode<'de, Capabilities>,
     {
         println!("=== 🔄 [recv] START for type: {} ===", std::any::type_name::<T>());
+        
         let packet = self.recv_packet().await?;
         println!("🔢 [recv] Packet to decode: {} bytes", packet.0.len());
-        let result = packet.decode_with(self.capabilities);
+        
+        // 🔥 关键修复：如果是 PrepareOk，特别处理阿里云的7字节包
+        let result = if std::any::type_name::<T>().contains("PrepareOk") {
+            self.handle_prepare_ok_with_aliyun_workaround(packet).await
+        } else {
+            packet.decode_with(self.capabilities)
+        };
+        
         println!("=== 🔄 [recv] END ===\n");
         result
     }
@@ -277,6 +253,47 @@ impl<S: Socket> MySqlStream<S> {
             is_tls: self.is_tls,
         }
     }
+
+        
+    async fn handle_prepare_ok_with_aliyun_workaround(&mut self, first_packet: Packet<Bytes>) -> Result<PrepareOk, Error> {
+        println!("🔧 [handle_prepare_ok_with_aliyun_workaround] Aliyun RDS workaround");
+        
+        let mut packet = first_packet;
+        let mut skipped_packets = 0;
+        
+        loop {
+            // 跳过所有7字节的包（阿里云的特殊包）
+            if packet.0.len() == 7 && packet.0[0] == 0x00 {
+                println!("   ⏩ Skipping Aliyun 7-byte packet (#{})", skipped_packets + 1);
+                packet = self.recv_packet().await?;
+                skipped_packets += 1;
+                continue;
+            }
+            
+            // 尝试解码
+            match packet.decode_with(self.capabilities) {
+                Ok(prepare_ok) => {
+                    if skipped_packets > 0 {
+                        println!("   ✅ Success after skipping {} Aliyun packets", skipped_packets);
+                    }
+                    return Ok(prepare_ok);
+                },
+                Err(e) => {
+                    println!("   ❌ Decode failed: {}", e);
+                    
+                    // 安全限制：最多处理10个包
+                    if skipped_packets >= 10 {
+                        return Err(err_protocol!("Too many invalid packets ({})", skipped_packets));
+                    }
+                    
+                    // 继续读取下一个包
+                    packet = self.recv_packet().await?;
+                    skipped_packets += 1;
+                }
+            }
+        }
+    }
+
 }
 
 impl<S> Deref for MySqlStream<S> {
