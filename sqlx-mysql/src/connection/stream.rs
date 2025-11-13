@@ -255,7 +255,10 @@ impl<S: Socket> MySqlStream<S> {
     }
 
         
-    async fn handle_prepare_ok_with_aliyun_workaround(&mut self, first_packet: Packet<Bytes>) -> Result<PrepareOk, Error> {
+    async fn handle_prepare_ok_with_aliyun_workaround<'de, T>(&mut self, first_packet: Packet<Bytes>) -> Result<T, Error> 
+    where
+        T: ProtocolDecode<'de, Capabilities>,
+    {
         println!("🔧 [handle_prepare_ok_with_aliyun_workaround] Aliyun RDS workaround");
         
         let mut packet = first_packet;
@@ -293,7 +296,6 @@ impl<S: Socket> MySqlStream<S> {
             }
         }
     }
-
 }
 
 impl<S> Deref for MySqlStream<S> {
