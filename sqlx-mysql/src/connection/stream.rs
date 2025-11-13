@@ -176,35 +176,13 @@ impl<S: Socket> MySqlStream<S> {
         let payload = self.recv_packet_part().await?;
         println!("🔢 [recv_packet] Initial payload: {} bytes", payload.len());
         
-        let final_payload = if payload.len() == 7 && self.waiting.front() == Some(&Waiting::Result) {
-            println!("⚠️  [recv_packet] SUSPICIOUS: Got 7 bytes but expected PrepareOk (12 bytes)");
-            println!("    This might be a fragmented packet. Checking for more data...");
-            
-            // 直接尝试读取更多数据
-            match self.recv_packet_part().await {
-                Ok(additional_data) => {
-                    println!("✅ [recv_packet] Found additional {} bytes", additional_data.len());
-                    let mut combined = BytesMut::with_capacity(payload.len() + additional_data.len());
-                    combined.extend_from_slice(&payload);
-                    combined.extend_from_slice(&additional_data);
-                    combined.freeze()
-                }
-                Err(e) => {
-                    println!("❌ [recv_packet] Failed to read additional data: {}", e);
-                    payload
-                }
-            }
-        } else {
-            payload
-        };
-        
-        // 检查错误包 - 使用 final_payload
-        if let Some(&first_byte) = final_payload.first() {
+        // 检查错误包 - 使用 payload
+        if let Some(&first_byte) = payload.first() {
             if first_byte == 0xff {
                 println!("❌ [recv_packet] Error packet detected (0xff)");
                 self.waiting.pop_front();
                 return Err(
-                    MySqlDatabaseError(ErrPacket::decode_with(final_payload, self.capabilities)?).into(),
+                    MySqlDatabaseError(ErrPacket::decode_with(payload, self.capabilities)?).into(),
                 );
             }
         } else {
@@ -212,10 +190,10 @@ impl<S: Socket> MySqlStream<S> {
             return Err(err_protocol!("Packet empty"));
         }
         
-        println!("✅ [recv_packet] Success, returning {} bytes", final_payload.len());
+        println!("✅ [recv_packet] Success, returning {} bytes", payload.len());
         println!("=== 🚀 [recv_packet] END ===\n");
         
-        Ok(Packet(final_payload))  // 使用 final_payload
+        Ok(Packet(payload))  // 使用 payload
     }
     
     // 在 recv 方法中添加调试
