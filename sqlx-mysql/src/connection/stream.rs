@@ -276,9 +276,10 @@ impl<S: Socket> MySqlStream<S> {
             // 尝试解码
             match packet.decode_with(self.capabilities) {
                 Ok(prepare_ok) => {
-                    if skipped_packets > 0 {
-                        println!("   ✅ Success after skipping {} Aliyun packets", skipped_packets);
-                    }
+                    // if skipped_packets > 0 {
+                    //     println!("   ✅ Success after skipping {} Aliyun packets", skipped_packets);
+                    // }
+                    println!("   ✅ Success after skipping {} Aliyun packets", skipped_packets);
                     return Ok(prepare_ok);
                 },
                 Err(e) => {
