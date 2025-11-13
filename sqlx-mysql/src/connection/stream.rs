@@ -129,6 +129,18 @@ impl<S: Socket> MySqlStream<S> {
     // 在 recv_packet_part 方法中添加调试
     async fn recv_packet_part(&mut self) -> Result<Bytes, Error> {
         println!("=== 📥 [recv_packet_part] START ===");
+    
+        // 🔥 关键修复：检查并清空可能残留的缓冲区数据
+        // 特别是在阿里云环境中，可能会有连接池的残留数据
+        let buffered_data_len = self.socket.buffer().len();
+        if buffered_data_len > 0 {
+            println!("⚠️ [recv_packet_part] WARNING: Buffer has {} bytes of leftover data!", buffered_data_len);
+            println!("   This is likely due to Aliyun RDS connection pool behavior");
+            println!("   Clearing buffer to avoid protocol desync...");
+            
+            // 清空缓冲区，确保我们从干净状态开始
+            self.socket.consume(buffered_data_len);
+        }
         
         // 读取4字节头
         let mut header: Bytes = self.socket.read(4).await?;
