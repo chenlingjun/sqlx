@@ -57,10 +57,9 @@ impl ProtocolDecode<'_, Capabilities> for PrepareOk {
         }
         
         // 标准MySQL格式：12字节
-        if buf.len() >= 12 {
-            println!("Detected standard MySQL format");
-            return Self::parse_standard_format(buf);
-        }
+        println!("Detected standard MySQL format");
+        return Self::parse_standard_format(buf);
+
         
         Err(err_protocol!(
             "Unsupported PrepareOk format: length={}, hex={}", 
