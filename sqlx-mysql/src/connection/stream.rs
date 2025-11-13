@@ -207,11 +207,11 @@ impl<S: Socket> MySqlStream<S> {
         println!("🔢 [recv] Packet to decode: {} bytes", packet.0.len());
         
         // 🔥 关键修复：如果是 PrepareOk，特别处理阿里云的7字节包
-        let result = if std::any::type_name::<T>().contains("PrepareOk") {
-            self.handle_prepare_ok_with_aliyun_workaround(packet).await
-        } else {
-            packet.decode_with(self.capabilities)
-        };
+        // let result = if std::any::type_name::<T>().contains("PrepareOk") {
+        //     self.handle_prepare_ok_with_aliyun_workaround(packet).await
+        // } else {
+        let result =    packet.decode_with(self.capabilities)
+        // };
         
         println!("=== 🔄 [recv] END ===\n");
         result
