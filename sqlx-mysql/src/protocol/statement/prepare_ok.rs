@@ -90,7 +90,7 @@ impl PrepareOk {
         let statement_id = u32::from_le_bytes(statement_id_bytes);
         
         println!("🔍 Statement ID bytes: {:02x} {:02x} {:02x} {:02x} = {}",
-        buf[2], buf[3], buf[4], buf[5], statement_id);
+        buf[1], buf[2], buf[3], buf[4], statement_id);
         
         // 跳过剩余的2个保留字节
         // 在连接池初始化阶段，columns 和 params 可能为0或不重要
