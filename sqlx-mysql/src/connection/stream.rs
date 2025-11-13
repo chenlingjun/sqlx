@@ -184,6 +184,26 @@ impl<S: Socket> MySqlStream<S> {
     // 在 recv_packet 方法中添加调试
     pub(crate) async fn recv_packet(&mut self) -> Result<Packet<Bytes>, Error> {
         println!("=== 🚀 [recv_packet] START ===");
+
+        // 检查缓冲区中是否已经有数据（阿里云特殊情况）
+        let pre_buffered_len = self.socket.buffer().len();
+        if pre_buffered_len > 0 {
+            println!("🔍 [recv_packet] Pre-buffered data detected: {} bytes", pre_buffered_len);
+            println!("   Hex: {}", hex_dump(&self.socket.buffer()[..std::cmp::min(pre_buffered_len, 32)]));
+            
+            // 如果是7字节的包，可能是阿里云的连接池包
+            if pre_buffered_len >= 11 { // 4字节头 + 7字节负载
+                let header_bytes = &self.socket.buffer()[0..4];
+                let payload_size = u32::from_le_bytes([header_bytes[0], header_bytes[1], header_bytes[2], 0]) as usize;
+                
+                if payload_size == 7 && pre_buffered_len >= 11 {
+                    println!("🚨 [recv_packet] Detected Aliyun 7-byte packet in buffer, skipping");
+                    self.socket.consume(11); // 跳过整个包
+                    // 然后重新开始读取
+                    return self.recv_packet().await;
+                }
+            }
+        }
         
         let payload = self.recv_packet_part().await?;
         println!("🔢 [recv_packet] Initial payload: {} bytes", payload.len());
