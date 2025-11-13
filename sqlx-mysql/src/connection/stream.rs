@@ -210,7 +210,7 @@ impl<S: Socket> MySqlStream<S> {
         // let result = if std::any::type_name::<T>().contains("PrepareOk") {
         //     self.handle_prepare_ok_with_aliyun_workaround(packet).await
         // } else {
-        let result =    packet.decode_with(self.capabilities)
+        let result =    packet.decode_with(self.capabilities);
         // };
         
         println!("=== 🔄 [recv] END ===\n");
